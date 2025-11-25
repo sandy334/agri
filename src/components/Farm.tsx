@@ -335,8 +335,11 @@ export const FarmDetail = ({ farm, user, onBack, onUpdate }: { farm: Farm; user:
     try {
       const result = await generateIrrigationPlan(farm, weather, soil);
       setPrediction(result);
-    } catch (e) {
-      alert("Prediction failed. Please try again.");
+      console.log("✅ Irrigation schedule generated:", result.summary);
+    } catch (e: any) {
+      // This should rarely happen now with the fallback, but just in case
+      const errorMsg = e?.message || "Unexpected error generating schedule";
+      console.error("Schedule generation error:", errorMsg);
     } finally {
       clearInterval(interval);
       setAnalyzing(false);
