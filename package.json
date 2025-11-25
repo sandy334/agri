@@ -4,13 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:server": "node server/index.js",
-    "build": "vite build",
+    "dev": "node server/index.js",
+    "build": "cd client && npm install && npm run build",
     "start": "node server/index.js",
-    "preview": "vite preview",
-    "install:deps": "npm install",
-    "deploy:azure": "npm run build && npm start"
+    "deploy:azure": "npm run build"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -21,15 +18,7 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "mongodb": "^5.7.0",
-    "@google/genai": "^1.30.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "recharts": "^3.4.1"
+    "@google/genai": "^1.30.0"
   },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
-  }
+  "devDependencies": {}
 }
