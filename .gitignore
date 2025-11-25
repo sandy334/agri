@@ -24,3 +24,20 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Azure deployment files
+api/node_modules
+api/dist
+*.zip
+
+# Database files
+server/data/
+
+# Deployment artifacts
+build/
+.azure/
+.vscode/settings.json
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
