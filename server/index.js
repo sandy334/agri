@@ -5,25 +5,17 @@ import { MongoClient, ObjectId } from 'mongodb';
 import path from 'path';
 import fs from 'fs';
 
-dotenv.config(); // VERY IMPORTANT — loads .env
+dotenv.config();
 
-// ----------------------
-// ENV VARIABLES
-// ----------------------
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.MONGODB_DB || "agri";
 const USE_LOCAL = (process.env.USE_LOCAL_DB || "false").toLowerCase() === "true";
+const PORT = process.env.PORT || 4000;
 
-// ----------------------
-// EXPRESS SETUP
-// ----------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ----------------------
-// FILE DB HELPERS
-// ----------------------
 const DB_PATH = path.join(process.cwd(), "server", "data", "db.json");
 
 function ensureFileDB() {
@@ -36,8 +28,12 @@ function ensureFileDB() {
 
 function readFileDB() {
     ensureFileDB();
-    const raw = fs.readFileSync(DB_PATH, "utf8");
-    return JSON.parse(raw);
+    try {
+        const raw = fs.readFileSync(DB_PATH, "utf8");
+        return JSON.parse(raw);
+    } catch (e) {
+        return { users: [], farms: [] };
+    }
 }
 
 function writeFileDB(data) {
@@ -164,13 +160,20 @@ function setupMongoRoutes(users, farms) {
 // START SERVER
 // ----------------------
 async function start() {
-    // If local DB is forced
     if (USE_LOCAL) {
+        console.log("⚠️  Using LOCAL FILE DATABASE (db.json)");
         setupLocalRoutes();
-    } 
-    else {
+    } else if (!MONGODB_URI) {
+        console.log("⚠️  No MONGODB_URI in .env, falling back to local file DB");
+        setupLocalRoutes();
+    } else {
         try {
-            const client = new MongoClient(MONGODB_URI);
+            console.log("🔌 Connecting to MongoDB Atlas...");
+            const client = new MongoClient(MONGODB_URI, {
+                serverSelectionTimeoutMS: 10000,
+                connectTimeoutMS: 10000,
+            });
+
             await client.connect();
             console.log("🌍 Connected to MongoDB Atlas");
 
@@ -178,18 +181,27 @@ async function start() {
             const users = db.collection("users");
             const farms = db.collection("farms");
 
-            await users.createIndex({ email: 1 }, { unique: true });
+            try {
+                await users.createIndex({ email: 1 }, { unique: true });
+            } catch (e) {
+                // Index might already exist
+            }
 
             setupMongoRoutes(users, farms);
-        } 
-        catch (err) {
-            console.error("❌ MongoDB connection failed. Using local DB.", err.message);
+        } catch (err) {
+            console.error("❌ MongoDB connection failed:", err.message);
+            console.log("⚠️  Falling back to LOCAL FILE DATABASE");
             setupLocalRoutes();
         }
     }
 
-    const port = process.env.PORT || 4000;
-    app.listen(port, () => console.log("🚀 Server running on port", port));
+    app.listen(PORT, () => {
+        console.log("🚀 Server running on http://localhost:" + PORT);
+        console.log("API endpoints ready at http://localhost:" + PORT + "/api/{users,login,farms}");
+    });
 }
 
-start();
+start().catch(e => {
+    console.error("Fatal error starting server:", e.message);
+    process.exit(1);
+});
