@@ -1,0 +1,7 @@
+{
+  "description": "Cloud-based irrigation and farm management system.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "name": "AgriCloud"
+}
