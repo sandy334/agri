@@ -14,6 +14,11 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Azure deployment
+.azure-config
+deploy.cmd
+.deployment
 *.local
 
 # Editor directories and files

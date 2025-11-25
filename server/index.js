@@ -16,6 +16,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Serve static files from dist directory (built frontend)
+app.use(express.static(path.join(process.cwd(), 'dist')));
+
 const DB_PATH = path.join(process.cwd(), "server", "data", "db.json");
 
 function ensureFileDB() {
@@ -412,9 +415,25 @@ async function start() {
         }
     }
 
+    // SPA fallback - serve index.html for all non-API routes
+    app.get('*', (req, res) => {
+        // Don't serve index.html for API routes
+        if (req.path.startsWith('/api/')) {
+            return res.status(404).json({ error: 'API endpoint not found' });
+        }
+        
+        const indexPath = path.join(process.cwd(), 'dist', 'index.html');
+        if (fs.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+        } else {
+            res.status(404).send('Frontend not built. Run "npm run build" first.');
+        }
+    });
+
     app.listen(PORT, () => {
         console.log("🚀 Server running on http://localhost:" + PORT);
         console.log("API endpoints ready at http://localhost:" + PORT + "/api/{users,login,farms}");
+        console.log("Frontend served from: http://localhost:" + PORT);
     });
 }
 
