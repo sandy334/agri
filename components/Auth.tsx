@@ -4,7 +4,7 @@ import { User } from '../types';
 import { StorageService, AuthService } from '../services';
 
 interface LoginProps {
-  onLogin: (u: User) => void;
+  onLogin: (u: User) => Promise<void>;
 }
 
 export const Login = ({ onLogin }: LoginProps) => {
@@ -13,7 +13,7 @@ export const Login = ({ onLogin }: LoginProps) => {
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -25,14 +25,14 @@ export const Login = ({ onLogin }: LoginProps) => {
     try {
       let user: User;
       if (isLogin) {
-        user = AuthService.login(email, password);
+        user = await AuthService.login(email, password);
       } else {
-        user = AuthService.register(email, password);
+        user = await AuthService.register(email, password);
       }
       
       // Persist session
       StorageService.saveUser(user);
-      onLogin(user);
+      await onLogin(user);
     } catch (err: any) {
       setError(err.message || "Authentication failed");
     }

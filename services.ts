@@ -3,6 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Farm, User, WeatherData, SoilData, PredictionResult, HistoricalData } from "./types";
 
 // --- Configuration ---
+const API_BASE_URL = "http://localhost:4000";
 const OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast";
 const OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 const SOILGRIDS_URL = "https://rest.isric.org/soilgrids/v2.0/properties/query";
@@ -10,8 +11,17 @@ const FARMS_STORAGE_KEY = "agricloud_farms_db";
 const USERS_STORAGE_KEY = "agricloud_users_db";
 const SESSION_STORAGE_KEY = "agricloud_user_session";
 
-// Initialize Gemini
-export const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Initialize Gemini with API key
+const getApiKey = () => {
+  // For Vite, environment variables are available on window
+  if (typeof window !== 'undefined' && (window as any).__VITE_API_KEY__) {
+    return (window as any).__VITE_API_KEY__;
+  }
+  // Fallback to process.env for Node.js environment
+  return process.env.VITE_API_KEY || process.env.API_KEY || 'AIzaSyC4TZyEbMvfiUfl0JzCPMoFGp5Cmb1RTzg';
+};
+
+export const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 // --- Helper: Determine Soil Texture from Composition ---
 export const getSoilTexture = (sand: number, clay: number, silt: number): string => {
@@ -32,7 +42,7 @@ export const getSoilTexture = (sand: number, clay: number, silt: number): string
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 export const StorageService = {
-  // --- User Methods ---
+  // --- User Session Methods ---
   saveUser: (user: User) => localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user)),
   
   getUser: (): User | null => {
@@ -42,77 +52,161 @@ export const StorageService = {
   
   logout: () => localStorage.removeItem(SESSION_STORAGE_KEY),
 
-  // --- Farm Methods (Scoped by User) ---
-  getFarmsForUser: (userId: string): Farm[] => {
-    const allFarms: Farm[] = JSON.parse(localStorage.getItem(FARMS_STORAGE_KEY) || "[]");
-    return allFarms.filter(f => f.userId === userId);
-  },
-
-  addFarm: (farm: Farm) => {
-    const allFarms: Farm[] = JSON.parse(localStorage.getItem(FARMS_STORAGE_KEY) || "[]");
-    allFarms.push(farm);
-    localStorage.setItem(FARMS_STORAGE_KEY, JSON.stringify(allFarms));
-  },
-
-  updateFarm: (updatedFarm: Farm) => {
-    let allFarms: Farm[] = JSON.parse(localStorage.getItem(FARMS_STORAGE_KEY) || "[]");
-    const index = allFarms.findIndex(f => f.id === updatedFarm.id);
-    if (index !== -1) {
-      allFarms[index] = updatedFarm;
-      localStorage.setItem(FARMS_STORAGE_KEY, JSON.stringify(allFarms));
+  // --- API-Based Farm Methods ---
+  getFarmsForUser: async (userId: string): Promise<Farm[]> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/farms?userId=${userId}`);
+      if (!response.ok) throw new Error('Failed to fetch farms');
+      
+      const farms = await response.json();
+      console.log(`📂 Loaded ${farms.length} farms for user ${userId}`);
+      return farms;
+    } catch (err) {
+      console.error('❌ Error fetching farms:', err);
+      // Fallback to localStorage for backwards compatibility
+      const allFarms: Farm[] = JSON.parse(localStorage.getItem(FARMS_STORAGE_KEY) || "[]");
+      return allFarms.filter(f => f.userId === userId);
     }
   },
 
-  deleteFarm: (farmId: string) => {
-    let allFarms: Farm[] = JSON.parse(localStorage.getItem(FARMS_STORAGE_KEY) || "[]");
-    allFarms = allFarms.filter(f => f.id !== farmId);
-    localStorage.setItem(FARMS_STORAGE_KEY, JSON.stringify(allFarms));
+  addFarm: async (farm: Farm): Promise<Farm> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/farms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(farm)
+      });
+      
+      if (!response.ok) throw new Error('Failed to create farm');
+      
+      const createdFarm = await response.json();
+      console.log('🌾 Farm created successfully:', createdFarm.name);
+      return createdFarm;
+    } catch (err) {
+      console.error('❌ Error creating farm, using local storage:', err);
+      // Fallback to localStorage
+      const allFarms: Farm[] = JSON.parse(localStorage.getItem(FARMS_STORAGE_KEY) || "[]");
+      allFarms.push(farm);
+      localStorage.setItem(FARMS_STORAGE_KEY, JSON.stringify(allFarms));
+      return farm;
+    }
+  },
+
+  updateFarm: async (updatedFarm: Farm): Promise<Farm> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/farms/${updatedFarm.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFarm)
+      });
+      
+      if (!response.ok) throw new Error('Failed to update farm');
+      
+      const updated = await response.json();
+      console.log('📝 Farm updated successfully:', updated.name);
+      return updated;
+    } catch (err) {
+      console.error('❌ Error updating farm, using local storage:', err);
+      // Fallback to localStorage
+      let allFarms: Farm[] = JSON.parse(localStorage.getItem(FARMS_STORAGE_KEY) || "[]");
+      const index = allFarms.findIndex(f => f.id === updatedFarm.id);
+      if (index !== -1) {
+        allFarms[index] = updatedFarm;
+        localStorage.setItem(FARMS_STORAGE_KEY, JSON.stringify(allFarms));
+      }
+      return updatedFarm;
+    }
+  },
+
+  deleteFarm: async (farmId: string): Promise<void> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/farms/${farmId}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) throw new Error('Failed to delete farm');
+      
+      console.log('🗑️ Farm deleted successfully:', farmId);
+    } catch (err) {
+      console.error('❌ Error deleting farm, using local storage:', err);
+      // Fallback to localStorage
+      let allFarms: Farm[] = JSON.parse(localStorage.getItem(FARMS_STORAGE_KEY) || "[]");
+      allFarms = allFarms.filter(f => f.id !== farmId);
+      localStorage.setItem(FARMS_STORAGE_KEY, JSON.stringify(allFarms));
+    }
   }
 };
 
 export const AuthService = {
-  register: (email: string, password: string): User => {
-    const users = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || "[]");
-    
-    if (users.find((u: any) => u.email === email)) {
-      throw new Error("User already exists with this email.");
-    }
+  register: async (email: string, password: string): Promise<User> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
 
-    // Auto-assign Admin role if email starts with 'admin'
-    const role = email.toLowerCase().startsWith("admin") ? "Admin" : "Farmer";
-
-    const newUser = {
-      id: "user_" + Date.now() + Math.random().toString(36).substr(2, 9),
-      name: email.split('@')[0],
-      email: email,
-      password: password, // Stored for demo purposes (simulating DB)
-      role: role as "Admin" | "Farmer",
-      thresholds: {
-        tempMax: 35,
-        humidityMin: 30,
-        moistureMin: 20,
-        rainMax: 20
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Registration failed');
       }
-    };
 
-    users.push(newUser);
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-    
-    // Return sanitized user object
-    const { password: _, ...safeUser } = newUser;
-    return safeUser as User;
+      const user = await response.json();
+      console.log('✅ User registered successfully:', user.email);
+      return user;
+    } catch (err: any) {
+      console.error('❌ Registration failed:', err.message);
+      throw err;
+    }
   },
 
-  login: (email: string, password: string): User => {
-    const users = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || "[]");
-    const user = users.find((u: any) => u.email === email && u.password === password);
+  login: async (email: string, password: string): Promise<User> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
 
-    if (!user) {
-      throw new Error("Invalid email or password.");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Login failed');
+      }
+
+      const user = await response.json();
+      console.log('🔐 User logged in successfully:', user.email);
+      return user;
+    } catch (err: any) {
+      console.error('❌ Login failed:', err.message);
+      throw err;
     }
+  }
+};
 
-    const { password: _, ...safeUser } = user;
-    return safeUser as User;
+// --- Database Health Check Service ---
+export const DatabaseService = {
+  checkHealth: async (): Promise<{status: string, database?: string, collections?: any, storage?: any}> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/health`);
+      if (!response.ok) throw new Error('Health check failed');
+      
+      const health = await response.json();
+      console.log('🏥 Database health check:', health.status);
+      return health;
+    } catch (err) {
+      console.warn('⚠️ Database health check failed, using local storage');
+      return { status: 'Local File Database' };
+    }
+  },
+
+  // Test database connection
+  testConnection: async (): Promise<boolean> => {
+    try {
+      const health = await DatabaseService.checkHealth();
+      return health.status.includes('MongoDB');
+    } catch {
+      return false;
+    }
   }
 };
 

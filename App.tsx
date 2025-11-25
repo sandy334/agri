@@ -28,11 +28,17 @@ const App = () => {
   }, []);
 
   // Helper to load data for a specific user
-  const handleLoginSuccess = (u: User) => {
+  const handleLoginSuccess = async (u: User) => {
     setUser(u);
-    const userFarms = StorageService.getFarmsForUser(u.id);
-    setFarms(userFarms);
-    setLoading(false);
+    try {
+      const userFarms = await StorageService.getFarmsForUser(u.id);
+      setFarms(userFarms);
+    } catch (err) {
+      console.error('Failed to load farms:', err);
+      setFarms([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -41,7 +47,7 @@ const App = () => {
     setFarms([]);
   };
 
-  const handleAddFarm = (farmData: Partial<Farm>) => {
+  const handleAddFarm = async (farmData: Partial<Farm>) => {
     if (!user) return;
 
     const newFarm: Farm = {
@@ -54,45 +60,64 @@ const App = () => {
       plantingDate: farmData.plantingDate || new Date().toISOString()
     };
 
-    // 1. Save basic farm immediately so UI updates
-    StorageService.addFarm(newFarm);
-    setFarms(StorageService.getFarmsForUser(user.id));
+    try {
+      // 1. Save basic farm via API
+      const createdFarm = await StorageService.addFarm(newFarm);
+      const updatedFarms = await StorageService.getFarmsForUser(user.id);
+      setFarms(updatedFarms);
 
-    // 2. Trigger Background Soil Analysis
-    fetchSoilData(newFarm.location.lat, newFarm.location.lon)
-      .then((soil) => {
-        const updatedFarm = { ...newFarm, soilData: soil };
-        StorageService.updateFarm(updatedFarm);
-        // Update state to reflect new soil data
-        setFarms(prev => prev.map(f => f.id === updatedFarm.id ? updatedFarm : f));
-      })
-      .catch(err => console.warn("Background soil fetch failed", err));
-  };
-
-  const handleUpdateFarm = (updatedFarm: Farm) => {
-    if (!user) return;
-    
-    StorageService.updateFarm(updatedFarm);
-    
-    // Refresh specific farm in state
-    setFarms(prev => prev.map(f => f.id === updatedFarm.id ? updatedFarm : f));
-    
-    // If currently viewing this farm, update the selection state
-    if (selectedFarm?.id === updatedFarm.id) {
-        setSelectedFarm(updatedFarm);
+      // 2. Background Soil Analysis
+      fetchSoilData(newFarm.location.lat, newFarm.location.lon)
+        .then(async (soil) => {
+          const updatedFarm = { ...createdFarm, soilData: soil };
+          await StorageService.updateFarm(updatedFarm);
+          // Update state to reflect new soil data
+          const refreshedFarms = await StorageService.getFarmsForUser(user.id);
+          setFarms(refreshedFarms);
+        })
+        .catch(err => console.warn("Background soil fetch failed", err));
+    } catch (err) {
+      console.error('Failed to create farm:', err);
+      alert('Failed to create farm. Please try again.');
     }
   };
 
-  const handleDeleteFarm = (id: string) => {
+  const handleUpdateFarm = async (updatedFarm: Farm) => {
+    if (!user) return;
+    
+    try {
+      await StorageService.updateFarm(updatedFarm);
+      
+      // Refresh farm list from API
+      const refreshedFarms = await StorageService.getFarmsForUser(user.id);
+      setFarms(refreshedFarms);
+      
+      // If currently viewing this farm, update the selection state
+      if (selectedFarm?.id === updatedFarm.id) {
+          setSelectedFarm(updatedFarm);
+      }
+    } catch (err) {
+      console.error('Failed to update farm:', err);
+      alert('Failed to update farm. Please try again.');
+    }
+  };
+
+  const handleDeleteFarm = async (id: string) => {
     if (!user) return;
     
     if (window.confirm("Are you sure you want to delete this farm?")) {
-        StorageService.deleteFarm(id);
-        // Refresh list
-        setFarms(StorageService.getFarmsForUser(user.id));
-        
-        if (selectedFarm?.id === id) {
-            setSelectedFarm(null);
+        try {
+          await StorageService.deleteFarm(id);
+          // Refresh list from API
+          const refreshedFarms = await StorageService.getFarmsForUser(user.id);
+          setFarms(refreshedFarms);
+          
+          if (selectedFarm?.id === id) {
+              setSelectedFarm(null);
+          }
+        } catch (err) {
+          console.error('Failed to delete farm:', err);
+          alert('Failed to delete farm. Please try again.');
         }
     }
   };
